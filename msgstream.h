@@ -661,6 +661,11 @@ public:
 		return s;
 	}
 
+	void setBuffer(std::string &&str) {
+		str.clear();
+		ss_.str(std::move(str));
+	}
+
 private:
 	std::stringstream ss_;
 };
@@ -676,6 +681,11 @@ public:
 		return s;
 	}
 
+	void setBuffer(std::string &&str) {
+		str.clear();
+		ss_.str(std::move(str));
+	}
+
 private:
 	std::stringstream ss_;
 };
@@ -684,12 +694,14 @@ inline void Serializer::writeArray(ArrayBuilder &ab) {
 	writeArrayHeader(ab.written());
 	std::string s = ab.consume();
 	w_.writeBlob(s.data(), s.size());
+	ab.setBuffer(std::move(s));
 }
 
 inline void Serializer::writeMap(MapBuilder &ab) {
 	writeMapHeader(ab.written());
 	std::string s = ab.consume();
 	w_.writeBlob(s.data(), s.size());
+	ab.setBuffer(std::move(s));
 }
 
 }
