@@ -1,1 +1,4 @@
 /msgpack-to-json
+/json-to-msgpack
+/compile_commands.json
+/.cache

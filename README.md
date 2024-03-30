@@ -1,3 +1,3 @@
 # MsgStream
 
-Streaming MessagePack parser (and future serializer).
+Streaming MessagePack parser and serializer.

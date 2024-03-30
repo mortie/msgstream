@@ -1,6 +1,9 @@
 #include <iostream>
+#include <span>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <stdint.h>
 #include <stddef.h>
@@ -10,6 +13,18 @@ namespace MsgStream {
 class ParseError: public std::exception {
 public:
 	ParseError(const char *what): what_(what) {}
+
+	const char *what() const noexcept override {
+		return what_;
+	}
+
+private:
+	const char *what_;
+};
+
+class SerializeError: public std::exception {
+public:
+	SerializeError(const char *what): what_(what) {}
 
 	const char *what() const noexcept override {
 		return what_;
@@ -60,14 +75,6 @@ public:
 		return (a << 32) | b;
 	}
 
-	void nextBlob(void *data, size_t length) {
-		unsigned char *ptr = (unsigned char *)data;
-		unsigned char *end = ptr + length;
-		while (ptr != end) {
-			*(ptr++) = (unsigned char)nextU8();
-		}
-	}
-
 	int8_t nextI8() {
 		return (int8_t)nextU8();
 	}
@@ -84,6 +91,14 @@ public:
 		return (int64_t)nextU64();
 	}
 
+	void nextBlob(void *data, size_t length) {
+		unsigned char *ptr = (unsigned char *)data;
+		unsigned char *end = ptr + length;
+		while (ptr != end) {
+			*(ptr++) = (unsigned char)nextU8();
+		}
+	}
+
 	void skip(size_t length) {
 		while (length--) {
 			nextU8();
@@ -91,6 +106,56 @@ public:
 	}
 
 	std::istream &is_;
+};
+
+class Writer {
+public:
+	explicit Writer(std::ostream &os): os_(os) {}
+
+	void writeU8(uint8_t num) {
+		os_.put((char)num);
+	}
+
+	void writeU16(uint16_t num) {
+		writeU8(num >> 8);
+		writeU8(num & 0xffu);
+	}
+
+	void writeU32(uint32_t num) {
+		writeU16(num >> 16);
+		writeU16(num & 0xffffu);
+	}
+
+	void writeU64(uint64_t num) {
+		writeU32(num >> 32);
+		writeU32(num & 0xffffffffu);
+	}
+
+	void writeI8(int8_t num) {
+		writeU8((uint8_t)num);
+	}
+
+	void writeI16(int16_t num) {
+		writeU16((uint16_t)num);
+	}
+
+	void writeI32(int32_t num) {
+		writeU32((uint32_t)num);
+	}
+
+	void writeI64(int64_t num) {
+		writeU64((int64_t)num);
+	}
+
+	void writeBlob(const void *data, size_t length) {
+		unsigned char *ptr = (unsigned char *)data;
+		unsigned char *end = ptr + length;
+		while (ptr != end) {
+			writeU8(*(ptr++));
+		}
+	}
+
+	std::ostream &os_;
 };
 
 }
@@ -240,11 +305,13 @@ public:
 
 		uint8_t ch = r_.nextU8();
 		if (ch == 0xca) {
+			static_assert(sizeof(float) == sizeof(uint32_t));
 			float f32;
 			uint32_t u32 = r_.nextU32();
 			memcpy(&f32, &u32, 4);
 			return f32;
 		} else if (ch == 0xcb) {
+			static_assert(sizeof(double) == sizeof(uint64_t));
 			double f64;
 			uint64_t u64 = r_.nextU64();
 			memcpy(&f64, &u64, 8);
@@ -421,6 +488,208 @@ inline void Parser::skipNext() {
 		nextUInt(); // Type
 		r_.skip(nextBinaryHeader()); // Binary
 	}
+}
+
+class ArrayBuilder;
+class MapBuilder;
+
+class Serializer {
+public:
+	explicit Serializer(std::ostream &os):
+		w_(os) {}
+
+	void writeInt(int64_t num) {
+		if (num >= 0 && num <= 0x7f) {
+			w_.writeU8(num);
+		} else if (num >= -32 && num < -1) {
+			w_.writeI8(num);
+		} else if (num >= -128 && num <= 127) {
+			w_.writeU8(0xd0);
+			w_.writeI8(num);
+		} else if (num >= -32768 && num <= 32767) {
+			w_.writeU8(0xd1);
+			w_.writeI16(num);
+		} else if (num >= -2147483648 && num <= 2147483647) {
+			w_.writeU8(0xd2);
+			w_.writeI32(num);
+		} else {
+			w_.writeU8(0xd3);
+			w_.writeI64(num);
+		}
+
+		written_ += 1;
+	}
+
+	void writeUInt(uint64_t num) {
+		if (num <= 0x7fu) {
+			w_.writeU8(num);
+		} else if (num <= 0xffu) {
+			w_.writeU8(0xcc);
+			w_.writeU8(num);
+		} else if (num <= 0xffffu) {
+			w_.writeU8(0xcd);
+			w_.writeU16(num);
+		} else if (num <= 0xffffffffu) {
+			w_.writeU8(0xce);
+			w_.writeU32(num);
+		} else {
+			w_.writeU8(0xcf);
+			w_.writeU64(num);
+		}
+
+		written_ += 1;
+	}
+
+	void writeNil() {
+		w_.writeU8(0xc0);
+		written_ += 1;
+	}
+
+	void writeBool(bool b) {
+		w_.writeU8(b ? 0xc3 : 0xc2);
+		written_ += 1;
+	}
+
+	void writeFloat32(float f) {
+		static_assert(sizeof(float) == sizeof(uint32_t));
+		uint32_t num;
+		memcpy(&num, &f, sizeof(num));
+		w_.writeU32(num);
+		written_ += 1;
+	}
+
+	void writeFloat64(double d) {
+		static_assert(sizeof(double) == sizeof(uint64_t));
+		uint64_t num;
+		memcpy(&num, &d, sizeof(num));
+		w_.writeU64(num);
+		written_ += 1;
+	}
+
+	void writeString(std::string_view sv) {
+		size_t length = sv.size();
+		if (length <= 0x1fu) {
+			w_.writeU8(0xa0u | length);
+		} else if (length <= 0xffu) {
+			w_.writeU8(0xd9);
+			w_.writeU8(length);
+		} else if (length <= 0xffffu) {
+			w_.writeU8(0xda);
+			w_.writeU16(length);
+		} else if (length <= 0xffffffffu) {
+			w_.writeU8(0xdb);
+			w_.writeU32(length);
+		} else {
+			throw SerializeError("String too long");
+		}
+
+		w_.writeBlob((const void *)sv.data(), length);
+		written_ += 1;
+	}
+
+	void writeBinary(std::span<unsigned char> bv) {
+		size_t length = bv.size();
+		if (length <= 0xffu) {
+			w_.writeU8(0xc4);
+			w_.writeU8(length);
+		} else if (length <= 0xffffu) {
+			w_.writeU8(0xc5);
+			w_.writeU16(length);
+		} else if (length <= 0xffffffffu) {
+			w_.writeU8(0xc6);
+			w_.writeU32(length);
+		} else {
+			throw SerializeError("Binary too long");
+		}
+
+		w_.writeBlob(bv.data(), length);
+		written_ += 1;
+	}
+
+	void writeArray(ArrayBuilder &ab);
+
+	void writeArrayHeader(size_t length) {
+		if (length <= 0x0fu) {
+			w_.writeU8(0x90u | length);
+		} else if (length <= 0xffffu) {
+			w_.writeU8(0xdc);
+			w_.writeU16(length);
+		} else if (length <= 0xffffffffu) {
+			w_.writeU8(0xdd);
+			w_.writeU32(length);
+		} else {
+			throw SerializeError("Array too long");
+		}
+	}
+
+	void writeMap(MapBuilder &mb);
+
+	void writeMapHeader(size_t length) {
+		if (length % 2 != 0) {
+			throw SerializeError("Odd number of values in map");
+		}
+
+		length /= 2;
+		if (length <= 0x0fu) {
+			w_.writeU8(0x80u | length);
+		} else if (length <= 0xffffu) {
+			w_.writeU8(0xde);
+			w_.writeU16(length);
+		} else if (length <= 0xffffffffu) {
+			w_.writeU8(0xdf);
+			w_.writeU32(length);
+		} else {
+			throw SerializeError("Array too long");
+		}
+	}
+
+	size_t written() { return written_; }
+
+protected:
+	detail::Writer w_;
+	size_t written_ = 0;
+};
+
+class ArrayBuilder: public Serializer {
+public:
+	ArrayBuilder(): Serializer(ss_) {}
+
+	std::string consume() {
+		std::string s = std::move(ss_).str();
+		ss_ = {};
+		written_ = 0;
+		return s;
+	}
+
+private:
+	std::stringstream ss_;
+};
+
+class MapBuilder: public Serializer {
+public:
+	MapBuilder(): Serializer(ss_) {}
+
+	std::string consume() {
+		std::string s = std::move(ss_).str();
+		ss_ = {};
+		written_ = 0;
+		return s;
+	}
+
+private:
+	std::stringstream ss_;
+};
+
+inline void Serializer::writeArray(ArrayBuilder &ab) {
+	writeArrayHeader(ab.written());
+	std::string s = ab.consume();
+	w_.writeBlob(s.data(), s.size());
+}
+
+inline void Serializer::writeMap(MapBuilder &ab) {
+	writeMapHeader(ab.written());
+	std::string s = ab.consume();
+	w_.writeBlob(s.data(), s.size());
 }
 
 }
