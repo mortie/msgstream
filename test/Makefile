@@ -1,5 +1,5 @@
 .PHONY: al
-all: .msgpack-test-suite.stamp test
+all: test
 
 msgpack-test-suite/dist/msgpack-test-suite.json:
 	git clone https://github.com/kawanet/msgpack-test-suite.git

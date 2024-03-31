@@ -249,7 +249,7 @@ public:
 			return Type::INT;
 		} else if (ch >= 0xd4 && ch <= 0xd8) {
 			return Type::EXTENSION;
-		} else if (ch >= 0xd9 && ch <= 0xd9) {
+		} else if (ch >= 0xd9 && ch <= 0xdb) {
 			return Type::STRING;
 		} else if (ch >= 0xdc && ch <= 0xdd) {
 			return Type::ARRAY;
@@ -576,11 +576,25 @@ protected:
 
 class ArrayParser: public Parser {
 public:
+	/**
+	 * Get the number of values left to read from the array.
+	 * Before any values have been read, this will be
+	 * equal to the total number of values in the array.
+	 */
+	size_t arraySize() { return limit_; }
+
 	ArrayParser(std::istream &is, size_t limit): Parser(is, limit) {}
 };
 
 class MapParser: public Parser {
 public:
+	/**
+	 * Get the number of key-value pairs left to read from the map.
+	 * Before any key-value pairs have been read, this will be
+	 * equal to the total number of key-value pairs in the map.
+	 */
+	size_t mapSize() { return limit_ / 2; }
+
 	MapParser(std::istream &is, size_t limit): Parser(is, limit * 2) {}
 };
 
@@ -740,6 +754,7 @@ public:
 		static_assert(sizeof(float) == sizeof(uint32_t));
 		uint32_t num;
 		memcpy(&num, &f, sizeof(num));
+		w_.writeU8(0xca);
 		w_.writeU32(num);
 	}
 
@@ -751,12 +766,13 @@ public:
 		static_assert(sizeof(double) == sizeof(uint64_t));
 		uint64_t num;
 		memcpy(&num, &d, sizeof(num));
+		w_.writeU8(0xcb);
 		w_.writeU64(num);
 	}
 
 	/**
 	 * Write a string value.
-	 * The string must be smaller than 2^31-1 bytes long.
+	 * The string must be smaller than 2^32-1 bytes long.
 	 */
 	void writeString(std::string_view sv) {
 		proceed();
@@ -781,9 +797,9 @@ public:
 
 	/**
 	 * Write a byte string value.
-	 * The byte string must be smaller than 2^31-1 bytes long.
+	 * The byte string must be smaller than 2^32-1 bytes long.
 	 */
-	void writeBinary(std::span<unsigned char> bv) {
+	void writeBinary(std::span<const unsigned char> bv) {
 		proceed();
 		size_t length = bv.size();
 		if (length <= 0xffu) {
@@ -873,7 +889,7 @@ public:
 	/**
 	 * Write an extension.
 	 */
-	void writeExtension(int64_t type, const std::span<unsigned char> ext) {
+	void writeExtension(int64_t type, std::span<const unsigned char> ext) {
 		// Incrementing written_ will happen in writeInt()
 		if (nesting_) {
 			throw SerializeError("Missing call to endArray/endMap");

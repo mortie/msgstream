@@ -59,6 +59,19 @@ static std::string hexToBytes(const std::string_view hexStr) {
 	return binStr;
 }
 
+static std::string bytesToHex(const std::string_view bin) {
+	std::string hex;
+	for (size_t i = 0; i < bin.size(); ++i) {
+		hex += encodeHexChar(((uint8_t)bin[i]) >> 4);
+		hex += encodeHexChar(((uint8_t)bin[i]) & 0x0f);
+		if (i != bin.size() - 1) {
+			hex += '-';
+		}
+	}
+
+	return hex;
+}
+
 template<typename T>
 static void assertEqual(const T &actual, const T &expected, const char *msg) {
 	if (actual == expected) {
@@ -232,10 +245,6 @@ static void check(std::string bin, Json::Value &val, Stats &stats) {
 		assertArraysEqual(parser.nextArray(), val["array"]);
 	} else if (val.isMember("map")) {
 		assertMapsEqual(parser.nextMap(), val["map"]);
-	} else if (val.isMember("timestamp")) {
-		// We don't natively support any extensions yet,
-		// so this is out of scope for the test suite
-		parser.skipNext();
 	} else if (val.isMember("ext")) {
 		auto expected = hexToBytes(val["ext"][1].asCString());
 		int64_t expectedType = val["ext"][0].asInt64();
@@ -264,6 +273,75 @@ static void check(std::string bin, Json::Value &val, Stats &stats) {
 	stats.numPassedChecks += 1;
 }
 
+static void roundtripValue(MsgStream::Parser &i, MsgStream::Serializer &o) {
+	using Type = MsgStream::Type;
+	switch (i.nextType()) {
+	case Type::INT:
+		o.writeInt(i.nextInt());
+		break;
+	case Type::UINT:
+		o.writeUInt(i.nextUInt());
+		break;
+	case Type::NIL:
+		i.skipNil();
+		o.writeNil();
+		break;
+	case Type::BOOL:
+		o.writeBool(i.nextBool());
+		break;
+	case Type::FLOAT:
+		o.writeFloat64(i.nextFloat());
+		break;
+	case Type::STRING:
+		o.writeString(i.nextString());
+		break;
+	case Type::BINARY:
+		o.writeBinary(i.nextBinary());
+		break;
+	case Type::ARRAY: {
+		auto ai = i.nextArray();
+		auto ao = o.beginArray(ai.arraySize());
+		while (ai.hasNext()) {
+			roundtripValue(ai, ao);
+		}
+		o.endArray(ao);
+	}
+		break;
+	case Type::MAP: {
+		auto mi = i.nextMap();
+		auto mo = o.beginMap(mi.mapSize());
+		std::string key;
+		while (mi.hasNext()) {
+			mi.nextString(key);
+			mo.writeString(key);
+			roundtripValue(mi, mo);
+		}
+		o.endMap(mo);
+	}
+		break;
+	case Type::EXTENSION: {
+		std::vector<unsigned char> ext;
+		int64_t type = i.nextExtension(ext);
+		o.writeExtension(type, ext);
+	}
+		break;
+	}
+}
+
+static std::string roundtrip(std::string bin) {
+	std::stringstream is(std::move(bin));
+	std::stringstream os;
+
+	MsgStream::Parser parser(is);
+	MsgStream::Serializer serializer(os);
+
+	while (parser.hasNext()) {
+		roundtripValue(parser, serializer);
+	}
+
+	return std::move(os).str();
+}
+
 static void runTest(Json::Value &val, Stats &stats) {
 	stats.numTotalTests += 1;
 
@@ -281,20 +359,38 @@ static void runTest(Json::Value &val, Stats &stats) {
 			check(bin, val, stats);
 		} catch (std::exception &ex) {
 			std::cout
-				<< "FAIL! Check " << (i + 1) << '/' << msgpacks.size()
-				<< ": " << ex.what() << '\n';
-			std::cout << "   -- msgpack: ";
-			for (size_t i = 0; i < bin.size(); ++i) {
-				std::cout
-					<< encodeHexChar(((uint8_t)bin[i]) >> 4)
-					<< encodeHexChar(((uint8_t)bin[i]) & 0x0f);
-				if (i != bin.size() - 1) {
-					std::cout << '-';
-				}
-			}
-			std::cout << "\n\n";
+				<< "FAIL! Check " << (i + 1) << '/' << msgpacks.size() << '\n'
+				<< "   -- Err: " << ex.what() << '\n'
+				<< "   -- msgpack: " << bytesToHex(bin) << '\n'
+				<< '\n';
 			return;
 		}
+
+		std::string roundtripped;
+		try {
+			roundtripped = roundtrip(bin);
+		} catch (std::exception &ex) {
+			std::cout
+				<< "FAIL! Check " << (i + 1) << '/' << msgpacks.size() << '\n'
+				<< "   -- Roundtrip err: " << ex.what() << '\n'
+				<< "   -- msgpack: " << bytesToHex(bin) << '\n'
+				<< '\n';
+			return;
+		}
+
+		try {
+			check(roundtripped, val, stats);
+		} catch (std::exception &ex) {
+			std::cout
+				<< "FAIL! Check " << (i + 1) << '/' << msgpacks.size()
+				<< " (roundtripped)\n"
+				<< "   -- Err: " << ex.what() << '\n'
+				<< "   -- Old msgpack: " << bytesToHex(bin) << '\n'
+				<< "   -- New msgpack: " << bytesToHex(roundtripped) << '\n'
+				<< '\n';
+			return;
+		}
+
 	}
 
 	std::cout << "OK!\n";
@@ -324,13 +420,18 @@ int main(int argc, char **argv) {
 	for (size_t groupIndex = 0; groupIndex < groupNames.size(); ++groupIndex) {
 		auto &groupName = groupNames[groupIndex];
 		auto &group = groups[groupName];
-		std::cout
-			<< (groupIndex + 1) << '/' << groupNames.size() << ": "
-			<< groupName << ":\n";
+		std::cout << groupName << ":\n";
 
 		Json::ArrayIndex testIndex;
 		for (testIndex = 0; testIndex < group.size(); ++testIndex) {
 			auto &test = group[testIndex];
+
+			// We don't have special timestamp handling,
+			// so just skip tests which deal with timestamps
+			if (test.isMember("timestamp")) {
+				continue;
+			}
+
 			if (testIndex < 9) {
 				std::cout << ' ';
 			}
