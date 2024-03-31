@@ -306,13 +306,13 @@ public:
 		} else if (ch >= 0xe0) {
 			// This series of casts produces a sign-extended u64
 			return (uint64_t)(int64_t)(int8_t)ch;
-		} else if (0xd0) {
+		} else if (ch == 0xd0) {
 			return (uint64_t)(int64_t)r_.nextI8();
-		} else if (0xd1) {
+		} else if (ch == 0xd1) {
 			return (uint64_t)(int64_t)r_.nextI16();
-		} else if (0xd2) {
+		} else if (ch == 0xd2) {
 			return (uint64_t)(int64_t)r_.nextI32();
-		} else if (0xd3) {
+		} else if (ch == 0xd3) {
 			return (uint64_t)(int64_t)r_.nextI64();
 		} else {
 			throw ParseError("Attempt to parse non-integer as integer");
