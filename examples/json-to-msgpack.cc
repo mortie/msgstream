@@ -21,6 +21,7 @@ void writeValue(MsgStream::Serializer &serializer, const Json::Value &val) {
 		for (Json::ArrayIndex i = 0; i < val.size(); ++i) {
 			writeValue(sub, val[i]);
 		}
+		serializer.endArray(sub);
 	} else if (val.isObject()) {
 		auto keys = val.getMemberNames();
 		auto sub = serializer.beginMap(keys.size());
@@ -28,6 +29,7 @@ void writeValue(MsgStream::Serializer &serializer, const Json::Value &val) {
 			sub.writeString(key);
 			writeValue(sub, val[key]);
 		}
+		serializer.endMap(sub);
 	}
 }
 

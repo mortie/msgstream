@@ -541,6 +541,8 @@ public:
 		w_(os) {}
 
 	void writeInt(int64_t num) {
+		proceed();
+
 		if (num >= 0 && num <= 0x7f) {
 			w_.writeU8(num);
 		} else if (num >= -32 && num < -1) {
@@ -558,11 +560,11 @@ public:
 			w_.writeU8(0xd3);
 			w_.writeI64(num);
 		}
-
-		written_ += 1;
 	}
 
 	void writeUInt(uint64_t num) {
+		proceed();
+
 		if (num <= 0x7fu) {
 			w_.writeU8(num);
 		} else if (num <= 0xffu) {
@@ -578,37 +580,36 @@ public:
 			w_.writeU8(0xcf);
 			w_.writeU64(num);
 		}
-
-		written_ += 1;
 	}
 
 	void writeNil() {
+		proceed();
 		w_.writeU8(0xc0);
-		written_ += 1;
 	}
 
 	void writeBool(bool b) {
+		proceed();
 		w_.writeU8(b ? 0xc3 : 0xc2);
-		written_ += 1;
 	}
 
 	void writeFloat32(float f) {
+		proceed();
 		static_assert(sizeof(float) == sizeof(uint32_t));
 		uint32_t num;
 		memcpy(&num, &f, sizeof(num));
 		w_.writeU32(num);
-		written_ += 1;
 	}
 
 	void writeFloat64(double d) {
+		proceed();
 		static_assert(sizeof(double) == sizeof(uint64_t));
 		uint64_t num;
 		memcpy(&num, &d, sizeof(num));
 		w_.writeU64(num);
-		written_ += 1;
 	}
 
 	void writeString(std::string_view sv) {
+		proceed();
 		size_t length = sv.size();
 		if (length <= 0x1fu) {
 			w_.writeU8(0xa0u | length);
@@ -626,10 +627,10 @@ public:
 		}
 
 		w_.writeBlob((const void *)sv.data(), length);
-		written_ += 1;
 	}
 
 	void writeBinary(std::span<unsigned char> bv) {
+		proceed();
 		size_t length = bv.size();
 		if (length <= 0xffu) {
 			w_.writeU8(0xc4);
@@ -645,26 +646,50 @@ public:
 		}
 
 		w_.writeBlob(bv.data(), length);
-		written_ += 1;
 	}
 
 	void writeArray(ArrayBuilder &ab);
 
 	Serializer beginArray(size_t n) {
-		written_ += 1;
+		proceed();
+		nesting_ = true;
+		nestingLength_ = n;
 		writeArrayHeader(n);
 		return Serializer(w_.os_);
+	}
+
+	void endArray(Serializer &sub) {
+		if (sub.written() != nestingLength_) {
+			throw SerializeError("beginArray/endArray length mismatch");
+		}
+
+		nesting_ = false;
 	}
 
 	void writeMap(MapBuilder &mb);
 
 	Serializer beginMap(size_t n) {
-		written_ += 1;
+		proceed();
+		nesting_ = true;
+		nestingLength_ = n * 2;
 		writeMapHeader(n);
 		return Serializer(w_.os_);
 	}
 
+	void endMap(Serializer &sub) {
+		if (sub.written() != nestingLength_) {
+			throw SerializeError("beginMap/endMap length mismatch");
+		}
+
+		nesting_ = false;
+	}
+
 	void writeExtension(int64_t type, const std::span<unsigned char> ext) {
+		// Incrementing written_ will happen in writeInt()
+		if (nesting_) {
+			throw SerializeError("Missing call to endArray/endMap");
+		}
+
 		size_t length = ext.size();
 		if (length == 1) {
 			w_.writeU8(0xd4);
@@ -696,6 +721,14 @@ public:
 	size_t written() { return written_; }
 
 protected:
+	void proceed() {
+		if (nesting_) {
+			throw SerializeError("Missing call to endArray/endMap");
+		}
+
+		written_ += 1;
+	}
+
 	void writeArrayHeader(size_t length) {
 		if (length <= 0x0fu) {
 			w_.writeU8(0x90u | length);
@@ -726,6 +759,8 @@ protected:
 
 	detail::Writer w_;
 	size_t written_ = 0;
+	bool nesting_ = false;
+	size_t nestingLength_ = 0;
 };
 
 class ArrayBuilder: public Serializer {
