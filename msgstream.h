@@ -100,6 +100,27 @@ public:
 		}
 	}
 
+	template<typename T>
+	void fillContainer(T &container, size_t length) {
+		container.resize(0);
+		container.reserve(length);
+
+		// Read in chunks, to avoid calling 'resize()' and memsetting
+		// some huge memory region unnecessarily
+		size_t index = 0;
+		while (length > 0) {
+			size_t chunk = length;
+			if (chunk > 4096) {
+				chunk = 4096;
+			}
+
+			container.resize(index + chunk);
+			nextBlob((void *)&container[index], chunk);
+			index += chunk;
+			length -= chunk;
+		}
+	}
+
 	void skip(size_t length) {
 		while (length--) {
 			nextU8();
@@ -424,8 +445,7 @@ public:
 	 */
 	void nextString(std::string &str) {
 		size_t length = nextStringHeader();
-		str.resize(length);
-		r_.nextBlob((void *)str.data(), length);
+		r_.fillContainer(str, length);
 	}
 
 	/**
@@ -447,8 +467,7 @@ public:
 	 */
 	void nextBinary(std::vector<unsigned char> &bin) {
 		size_t length = nextBinaryHeader();
-		bin.resize(length);
-		r_.nextBlob((void *)bin.data(), bin.size());
+		r_.fillContainer(bin, length);
 	}
 
 	/**
@@ -494,8 +513,8 @@ public:
 		int64_t type;
 		size_t length;
 		nextExtensionHeader(type, length);
-		ext.resize(length);
-		r_.nextBlob((void *)ext.data(), ext.size());
+
+		r_.fillContainer(ext, length);
 		return type;
 	}
 
