@@ -120,6 +120,10 @@ static void printMap(MsgStream::MapParser parser, int depth) {
 static void printValue(MsgStream::Parser &parser, int depth) {
 	using Type = MsgStream::Type;
 
+	if (depth >= 1000) {
+		throw MsgStream::ParseError("Depth limit exceeded");
+	}
+
 	switch (parser.nextType()) {
 	case Type::INT:
 		std::cout << parser.nextInt();
