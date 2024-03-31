@@ -166,7 +166,8 @@ enum class Type {
 	UINT,
 	NIL,
 	BOOL,
-	FLOAT,
+	FLOAT32,
+	FLOAT64,
 	STRING,
 	BINARY,
 	ARRAY,
@@ -240,9 +241,9 @@ public:
 		} else if (ch >= 0xc7 && ch <= 0xc9) {
 			return Type::EXTENSION;
 		} else if (ch == 0xca) {
-			return Type::FLOAT;
+			return Type::FLOAT32;
 		} else if (ch == 0xcb) {
-			return Type::FLOAT;
+			return Type::FLOAT64;
 		} else if (ch >= 0xcc && ch <= 0xcf) {
 			return Type::UINT;
 		} else if (ch >= 0xd0 && ch <= 0xd3) {
@@ -359,13 +360,13 @@ public:
 	}
 
 	/**
-	 * Get the next value as a float.
+	 * Get the next value as a 32-bit float.
 	 *
 	 * Preconditions:
 	 *   hasNext() == true
-	 *   nextType() == Type::FLOAT
+	 *   nextType() == Type::FLOAT32 || nextType() == Type::FLOAT64
 	 */
-	double nextFloat() {
+	float nextFloat32() {
 		proceed();
 
 		uint8_t ch = r_.nextU8();
@@ -375,6 +376,34 @@ public:
 			uint32_t u32 = r_.nextU32();
 			memcpy(&f32, &u32, 4);
 			return f32;
+		} else if (ch == 0xcb) {
+			static_assert(sizeof(double) == sizeof(uint64_t));
+			double f64;
+			uint64_t u64 = r_.nextU64();
+			memcpy(&f64, &u64, 8);
+			return (float)f64;
+		} else {
+			throw ParseError("Attempt to parse non-float as float");
+		}
+	}
+
+	/**
+	 * Get the next value as a 64-bit float.
+	 *
+	 * Preconditions:
+	 *   hasNext() == true
+	 *   nextType() == Type::FLOAT32 || nextType() == Type::FLOAT64
+	 */
+	double nextFloat64() {
+		proceed();
+
+		uint8_t ch = r_.nextU8();
+		if (ch == 0xca) {
+			static_assert(sizeof(float) == sizeof(uint32_t));
+			float f32;
+			uint32_t u32 = r_.nextU32();
+			memcpy(&f32, &u32, 4);
+			return (double)f32;
 		} else if (ch == 0xcb) {
 			static_assert(sizeof(double) == sizeof(uint64_t));
 			double f64;
@@ -646,8 +675,9 @@ inline void Parser::skipNext() {
 	case Type::BOOL:
 		nextBool();
 		break;
-	case Type::FLOAT:
-		nextFloat();
+	case Type::FLOAT32:
+	case Type::FLOAT64:
+		nextFloat32();
 		break;
 	case Type::STRING:
 		r_.skip(nextStringHeader());

@@ -105,8 +105,9 @@ static void assertValuesEqual(MsgStream::Parser &parser, Json::Value &val) {
 	case Type::BOOL:
 		assertEqual(parser.nextBool(), val.asBool(), "Invalid value");
 		break;
-	case Type::FLOAT:
-		assertEqual(parser.nextFloat(), val.asDouble(), "Invalid value");
+	case Type::FLOAT32:
+	case Type::FLOAT64:
+		assertEqual(parser.nextFloat64(), val.asDouble(), "Invalid value");
 		break;
 	case Type::STRING:
 		assertEqual(parser.nextString(), val.asString(), "Invalid value");
@@ -230,9 +231,11 @@ static void check(std::string bin, Json::Value &val, Stats &stats) {
 			assertEqual(
 				parser.nextUInt(), num.asUInt64(),
 				"Incorrect uint value");
-		} else if (type == MsgStream::Type::FLOAT) {
+		} else if (
+				type == MsgStream::Type::FLOAT32 ||
+				type == MsgStream::Type::FLOAT64) {
 			assertEqual(
-				parser.nextFloat(), num.asDouble(),
+				parser.nextFloat64(), num.asDouble(),
 				"Incorrect float value");
 		} else {
 			throw std::runtime_error("Value not number");
@@ -289,8 +292,11 @@ static void roundtripValue(MsgStream::Parser &i, MsgStream::Serializer &o) {
 	case Type::BOOL:
 		o.writeBool(i.nextBool());
 		break;
-	case Type::FLOAT:
-		o.writeFloat64(i.nextFloat());
+	case Type::FLOAT32:
+		o.writeFloat32(i.nextFloat32());
+		break;
+	case Type::FLOAT64:
+		o.writeFloat64(i.nextFloat64());
 		break;
 	case Type::STRING:
 		o.writeString(i.nextString());
