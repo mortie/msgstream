@@ -18,6 +18,10 @@ fuzz:
 check:
 	make -C test check
 
+.PHONY: valgrind-check
+valgrind-check:
+	make -C test valgrind-check
+
 .PHONY: clean
 clean:
 	rm -f $(OUT)/msgpack-to-json $(OUT)/json-to-msgpack
