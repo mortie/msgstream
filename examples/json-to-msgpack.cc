@@ -17,19 +17,17 @@ void writeValue(MsgStream::Serializer &serializer, const Json::Value &val) {
 	} else if (val.isString()) {
 		serializer.writeString(val.asCString());
 	} else if (val.isArray()) {
-		MsgStream::ArrayBuilder builder;
+		auto sub = serializer.beginArray(val.size());
 		for (Json::ArrayIndex i = 0; i < val.size(); ++i) {
-			writeValue(builder, val[i]);
+			writeValue(sub, val[i]);
 		}
-		serializer.writeArray(builder);
 	} else if (val.isObject()) {
-		MsgStream::MapBuilder builder;
 		auto keys = val.getMemberNames();
+		auto sub = serializer.beginMap(keys.size());
 		for (auto &key: keys) {
-			builder.writeString(key);
-			writeValue(builder, val[key]);
+			sub.writeString(key);
+			writeValue(sub, val[key]);
 		}
-		serializer.writeMap(builder);
 	}
 }
 

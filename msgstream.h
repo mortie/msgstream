@@ -650,39 +650,18 @@ public:
 
 	void writeArray(ArrayBuilder &ab);
 
-	void writeArrayHeader(size_t length) {
-		if (length <= 0x0fu) {
-			w_.writeU8(0x90u | length);
-		} else if (length <= 0xffffu) {
-			w_.writeU8(0xdc);
-			w_.writeU16(length);
-		} else if (length <= 0xffffffffu) {
-			w_.writeU8(0xdd);
-			w_.writeU32(length);
-		} else {
-			throw SerializeError("Array too long");
-		}
+	Serializer beginArray(size_t n) {
+		written_ += 1;
+		writeArrayHeader(n);
+		return Serializer(w_.os_);
 	}
 
 	void writeMap(MapBuilder &mb);
 
-	void writeMapHeader(size_t length) {
-		if (length % 2 != 0) {
-			throw SerializeError("Odd number of values in map");
-		}
-
-		length /= 2;
-		if (length <= 0x0fu) {
-			w_.writeU8(0x80u | length);
-		} else if (length <= 0xffffu) {
-			w_.writeU8(0xde);
-			w_.writeU16(length);
-		} else if (length <= 0xffffffffu) {
-			w_.writeU8(0xdf);
-			w_.writeU32(length);
-		} else {
-			throw SerializeError("Array too long");
-		}
+	Serializer beginMap(size_t n) {
+		written_ += 1;
+		writeMapHeader(n);
+		return Serializer(w_.os_);
 	}
 
 	void writeExtension(int64_t type, const std::span<unsigned char> ext) {
@@ -717,6 +696,34 @@ public:
 	size_t written() { return written_; }
 
 protected:
+	void writeArrayHeader(size_t length) {
+		if (length <= 0x0fu) {
+			w_.writeU8(0x90u | length);
+		} else if (length <= 0xffffu) {
+			w_.writeU8(0xdc);
+			w_.writeU16(length);
+		} else if (length <= 0xffffffffu) {
+			w_.writeU8(0xdd);
+			w_.writeU32(length);
+		} else {
+			throw SerializeError("Array too long");
+		}
+	}
+
+	void writeMapHeader(size_t length) {
+		if (length <= 0x0fu) {
+			w_.writeU8(0x80u | length);
+		} else if (length <= 0xffffu) {
+			w_.writeU8(0xde);
+			w_.writeU16(length);
+		} else if (length <= 0xffffffffu) {
+			w_.writeU8(0xdf);
+			w_.writeU32(length);
+		} else {
+			throw SerializeError("Array too long");
+		}
+	}
+
 	detail::Writer w_;
 	size_t written_ = 0;
 };
@@ -768,11 +775,15 @@ inline void Serializer::writeArray(ArrayBuilder &ab) {
 	ab.setBuffer(std::move(s));
 }
 
-inline void Serializer::writeMap(MapBuilder &ab) {
-	writeMapHeader(ab.written());
-	std::string s = ab.consume();
+inline void Serializer::writeMap(MapBuilder &mb) {
+	if (mb.written() % 2 != 0) {
+		throw SerializeError("Odd number of values in map");
+	}
+
+	writeMapHeader(mb.written() / 2);
+	std::string s = mb.consume();
 	w_.writeBlob(s.data(), s.size());
-	ab.setBuffer(std::move(s));
+	mb.setBuffer(std::move(s));
 }
 
 }
