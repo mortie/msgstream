@@ -349,6 +349,15 @@ public:
 
 	MapParser nextMap();
 
+	int64_t nextExtension(std::vector<unsigned char> &ext) {
+		int64_t type;
+		size_t length;
+		nextExtensionHeader(type, length);
+		ext.resize(length);
+		r_.nextBlob((void *)ext.data(), ext.size());
+		return type;
+	}
+
 	void skipNext();
 
 	void skipAll() {
@@ -404,6 +413,35 @@ protected:
 		} else {
 			throw ParseError("Attempt to parse non-binary as binary");
 		}
+	}
+
+	void nextExtensionHeader(int64_t &type, size_t &length) {
+		if (limit_ == 0) {
+			throw ParseError("Length limit exceeded");
+		}
+
+		uint8_t ch = r_.nextU8();
+		if (ch == 0xd4) {
+			length = 1;
+		} else if (ch == 0xd5) {
+			length = 2;
+		} else if (ch == 0xd6) {
+			length = 4;
+		} else if (ch == 0xd7) {
+			length = 8;
+		} else if (ch == 0xd8) {
+			length = 16;
+		} else if (ch == 0xc7) {
+			length = r_.nextU8();
+		} else if (ch == 0xc8) {
+			length = r_.nextU16();
+		} else if (ch == 0xc9) {
+			length = r_.nextU32();
+		} else {
+			throw ParseError("Attempt to parse non-extension as extension");
+		}
+
+		type = nextInt();
 	}
 
 	detail::Reader r_;
@@ -484,9 +522,13 @@ inline void Parser::skipNext() {
 	case Type::MAP:
 		nextMap().skipAll();
 		break;
-	case Type::EXTENSION:
-		nextUInt(); // Type
-		r_.skip(nextBinaryHeader()); // Binary
+	case Type::EXTENSION: {
+		int64_t type;
+		size_t length;
+		nextExtensionHeader(type, length);
+		r_.skip(length);
+	}
+		break;
 	}
 }
 
@@ -641,6 +683,35 @@ public:
 		} else {
 			throw SerializeError("Array too long");
 		}
+	}
+
+	void writeExtension(int64_t type, const std::span<unsigned char> ext) {
+		size_t length = ext.size();
+		if (length == 1) {
+			w_.writeU8(0xd4);
+		} else if (length == 2) {
+			w_.writeU8(0xd5);
+		} else if (length == 4) {
+			w_.writeU8(0xd6);
+		} else if (length == 8) {
+			w_.writeU8(0xd7);
+		} else if (length == 16) {
+			w_.writeU8(0xd8);
+		} else if (length <= 0xffu) {
+			w_.writeU8(0xc7);
+			w_.writeU8(length);
+		} else if (length <= 0xffffu) {
+			w_.writeU8(0xc8);
+			w_.writeU16(length);
+		} else if (length <= 0xffffffffu) {
+			w_.writeU8(0xc9);
+			w_.writeU32(length);
+		} else {
+			throw SerializeError("Extension too long");
+		}
+
+		writeInt(type);
+		w_.writeBlob(ext.data(), length);
 	}
 
 	size_t written() { return written_; }
