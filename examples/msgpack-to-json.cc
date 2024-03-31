@@ -1,6 +1,8 @@
 #include "../msgstream.h"
 #include <iostream>
 #include <fstream>
+#include <span>
+#include <string>
 
 static void printString(const std::string &str) {
 	std::cout << '"';
@@ -20,6 +22,51 @@ static void printString(const std::string &str) {
 	}
 
 	std::cout << '"';
+}
+
+// JSON doesn't natively support binary and extension types,
+// so we'll print them as base64 data URIs
+static void printBinary(std::string_view mime, std::span<unsigned char> data) {
+	constexpr const char *ALPHABET =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		"abcdefghijklmnopqrstuvwxyz"
+		"0123456789+/";
+
+	std::string str;
+	str += "data:";
+	str += mime; 
+	str += ";base64,";
+
+	size_t i;
+	for (i = 0; i + 2 < data.size(); i += 3) {
+		uint32_t num =
+			(data[i] << 16) |
+			(data[i + 1] << 8) |
+			(data[i + 2] << 0);
+		str += ALPHABET[(num >> 18) & 0x3f];
+		str += ALPHABET[(num >> 12) & 0x3f];
+		str += ALPHABET[(num >> 6) & 0x3f];
+		str += ALPHABET[(num >> 0) & 0x3f];
+	}
+
+	if (data.size() - i == 2) {
+		// in:  [ xxxxxxxx yyyyyyyy ]
+		// out: [ xxxxxx xxyyyy yyyy00 ]
+		uint16_t num = (data[i] << 8) | data[i + 1];
+		str += ALPHABET[(num >> 10) & 0x3f];
+		str += ALPHABET[(num >> 4) & 0x3f];
+		str += ALPHABET[(num << 2) & 0x3f];
+		str += '=';
+	} else if (data.size() - i == 1) {
+		// in:  [ xxxxxxxx ]
+		// out: [ xxxxxx xx0000 ]
+		uint8_t num = data[i];
+		str += ALPHABET[(num >> 2) & 0x3f];
+		str += ALPHABET[(num << 4) & 0x3f];
+		str += "==";
+	}
+
+	printString(str);
 }
 
 static void indent(int depth) {
@@ -93,9 +140,10 @@ static void printValue(MsgStream::Parser &parser, int depth) {
 	case Type::STRING:
 		printString(parser.nextString());
 		break;
-	case Type::BINARY:
-		parser.skipNext();
-		std::cout << "(binary)";
+	case Type::BINARY: {
+		auto bin = parser.nextBinary();
+		printBinary("application/octet-stream", bin);
+	}
 		break;
 	case Type::ARRAY:
 		printArray(parser.nextArray(), depth);
@@ -103,9 +151,13 @@ static void printValue(MsgStream::Parser &parser, int depth) {
 	case Type::MAP:
 		printMap(parser.nextMap(), depth);
 		break;
-	case Type::EXTENSION:
-		parser.skipNext();
-		std::cout << "(extension)";
+	case Type::EXTENSION: {
+		std::vector<unsigned char> bin;
+		int64_t type = parser.nextExtension(bin);
+		std::string mime = "application/x-msgpack-ext.";
+		mime += std::to_string(type);
+		printBinary(mime, bin);
+	}
 		break;
 	}
 }
