@@ -134,8 +134,11 @@ static void printValue(MsgStream::Parser &parser, int depth) {
 	case Type::BOOL:
 		std::cout << (parser.nextBool() ? "true" : "false");
 		break;
-	case Type::FLOAT:
-		std::cout << parser.nextFloat();
+	case Type::FLOAT32:
+		std::cout << parser.nextFloat32();
+		break;
+	case Type::FLOAT64:
+		std::cout << parser.nextFloat64();
 		break;
 	case Type::STRING:
 		printString(parser.nextString());
