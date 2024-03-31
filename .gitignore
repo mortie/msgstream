@@ -2,3 +2,4 @@
 /json-to-msgpack
 /compile_commands.json
 /.cache
+/fuzz-data

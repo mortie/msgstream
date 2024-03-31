@@ -127,10 +127,15 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	MsgStream::Parser parser(*is);
+	try {
+		MsgStream::Parser parser(*is);
 
-	while (parser.hasNext()) {
-		printValue(parser, 0);
-		std::cout << '\n';
+		while (parser.hasNext()) {
+			printValue(parser, 0);
+			std::cout << '\n';
+		}
+	} catch (MsgStream::ParseError &err) {
+		std::cerr << "Parse error: " << err.what() << '\n';
+		return 1;
 	}
 }
