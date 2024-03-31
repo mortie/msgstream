@@ -25,9 +25,11 @@ The API is split into two main classes:
 and `MsgStream::Serializer` for serializing MessagePack messages.
 
 To get a feel for how the API works, I recommend taking a look at
-[examples/msgpack-to-json.cc](examples/msgpack-to-json.cc)
-for an example of how to use the parser,
-and [examples/json-to-msgpack.cc](examples/json-to-msgpack.cc)
-for an example of how to use the serializer.
+the example programs:
+
+* [examples/msgpack-to-json.cc](examples/msgpack-to-json.cc):
+  Parse a MessagePack file and output (almost correct) JSON
+* [examples/json-to-msgpack.cc](examples/json-to-msgpack.cc):
+  Parse a JSON file and output MessagePack
 
 [msgstream.h](msgstream.h) contains documentation comments.
