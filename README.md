@@ -36,7 +36,7 @@ the example programs:
 
 ## Tests
 
-Run tests with: `make check`. This depends on git.
+Run tests with `make check`. This depends on git.
 This will download 
 [kawanet's msgpack-test-suite](https://github.com/kawanet/msgpack-test-suite/),
 a large list of msgpack strings and their associated expected values.
