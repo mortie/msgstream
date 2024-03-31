@@ -29,3 +29,5 @@ To get a feel for how the API works, I recommend taking a look at
 for an example of how to use the parser,
 and [examples/json-to-msgpack.cc](examples/json-to-msgpack.cc)
 for an example of how to use the serializer.
+
+[msgstream.h](msgstream.h) contains documentation comments.

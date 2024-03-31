@@ -177,11 +177,24 @@ enum class Type {
 class MapParser;
 class ArrayParser;
 
+/**
+ * A MessagePack stream parser.
+ * Methods will throw a ParseError if preconditions are violated.
+ */
 class Parser {
 public:
 	explicit Parser(std::istream &is):
 		r_(is) {}
 
+	/**
+	 * Check whether there are more objects available in the stream.
+	 * For unconstrained parsers, this returns 'false' only when EOF is reached.
+	 * For constrained parsers (i.e MapParser and ArrayParser),
+	 * this returns 'false' when there are no more values left to read
+	 * in the array/map.
+	 *
+	 * Preconditions: None
+	 */
 	bool hasNext() {
 		if (hasLimit_) {
 			return limit_ > 0;
@@ -190,6 +203,13 @@ public:
 		}
 	}
 
+	/**
+	 * Get the type of the next value.
+	 *
+	 * Preconditions:
+	 *   The stream cursor must be at the start of a valid object
+	 *   hasNext() == true
+	 */
 	Type nextType() {
 		if (limit_ == 0) {
 			throw ParseError("Length limit exceeded");
@@ -242,11 +262,33 @@ public:
 		}
 	}
 
+	/**
+	 * Get the next value as an integer.
+	 *
+	 * Preconditions:
+	 *   hasNext() == true
+	 *   nextType() == Type::INT || nextType() == Type::UINT
+	 *
+	 * Note: if nextType() == Type::UINT,
+	 * the int might not fit in an int64_t.
+	 * This will cause the value to wrap around.
+	 */
 	int64_t nextInt() {
 		proceed();
 		return (int64_t)nextUInt();
 	}
 
+	/**
+	 * Get the next value as an unsigned integer.
+	 *
+	 * Preconditions:
+	 *   hasNext() == true
+	 *   nextType() == Type::INT || nextType() == Type::UINT
+	 *
+	 * Note: if nextType() == Type::INT,
+	 * the int might not fit in a uint64_t.
+	 * This will cause the value to wrap around.
+	 */
 	uint64_t nextUInt() {
 		proceed();
 
@@ -277,6 +319,13 @@ public:
 		}
 	}
 
+	/**
+	 * Skip the next value if it's a nil.
+	 *
+	 * Preconditions:
+	 *   hasNext() == true
+	 *   nextType() == Type::NIL
+	 */
 	void skipNil() {
 		proceed();
 
@@ -288,6 +337,14 @@ public:
 		}
 	}
 
+
+	/**
+	 * Get the next value as a boolean.
+	 *
+	 * Preconditions:
+	 *   hasNext() == true
+	 *   nextType() == Type::BOOL
+	 */
 	bool nextBool() {
 		proceed();
 
@@ -301,6 +358,13 @@ public:
 		}
 	}
 
+	/**
+	 * Get the next value as a float.
+	 *
+	 * Preconditions:
+	 *   hasNext() == true
+	 *   nextType() == Type::FLOAT
+	 */
 	double nextFloat() {
 		proceed();
 
@@ -322,34 +386,81 @@ public:
 		}
 	}
 
+	/**
+	 * Get the next value as a string.
+	 *
+	 * Preconditions:
+	 *   hasNext() == true
+	 *   nextType() == Type::STRING
+	 */
 	void nextString(std::string &str) {
 		size_t length = nextStringHeader();
 		str.resize(length);
 		r_.nextBlob((void *)str.data(), length);
 	}
 
+	/**
+	 * Like 'nextString(std::string &)',
+	 * except that a new string is returned instead.
+	 */
 	std::string nextString() {
 		std::string str;
 		nextString(str);
 		return str;
 	}
 
+	/**
+	 * Get the next value as a byte string.
+	 *
+	 * Preconditions:
+	 *   hasNext() == true
+	 *   nextType() == Type::BINARY
+	 */
 	void nextBinary(std::vector<unsigned char> &bin) {
 		size_t length = nextBinaryHeader();
 		bin.resize(length);
 		r_.nextBlob((void *)bin.data(), bin.size());
 	}
 
+	/**
+	 * Like 'nextBinary(std::vector<unsigned char> &)',
+	 * except that a new vector is returned instead.
+	 */
 	std::vector<unsigned char> nextBinary() {
 		std::vector<unsigned char> bin;
 		nextBinary(bin);
 		return bin;
 	}
 
+	/**
+	 * Create a constrained sub-parser limited to read
+	 * only the values in the next array value.
+	 *
+	 * Preconditions:
+	 *   hasNext() == true
+	 *   nextType() == Type::ARRAY
+	 */
 	ArrayParser nextArray();
 
+	/**
+	 * Create a constrained sub-parser limited to read
+	 * only the values in the next map value.
+	 *
+	 * Preconditions:
+	 *   hasNext() == true
+	 *   nextType() == Type::MAP
+	 */
 	MapParser nextMap();
 
+	/**
+	 * Read the next extension value.
+	 * Will populate 'ext' with its contents,
+	 * and return the extension value's type.
+	 *
+	 * Preconditions:
+	 *   hasNext() == true
+	 *   nextType() == Type::EXTENSION
+	 */
 	int64_t nextExtension(std::vector<unsigned char> &ext) {
 		int64_t type;
 		size_t length;
@@ -359,8 +470,21 @@ public:
 		return type;
 	}
 
+	/**
+	 * Skip the next value, whatever its type.
+	 *
+	 * Preconditions:
+	 *   The stream cursor must be at the start of a valid object
+	 *   hasNext() == true
+	 */
 	void skipNext();
 
+	/**
+	 * Skip all available values.
+	 *
+	 * Preconditions:
+	 *   The stream must be a valid MessagePack stream.
+	 */
 	void skipAll() {
 		while (hasNext()) {
 			skipNext();
@@ -536,11 +660,17 @@ inline void Parser::skipNext() {
 class ArrayBuilder;
 class MapBuilder;
 
+/**
+ * A MessagePack stream writer.
+ */
 class Serializer {
 public:
 	explicit Serializer(std::ostream &os):
 		w_(os) {}
 
+	/**
+	 * Write an integer value.
+	 */
 	void writeInt(int64_t num) {
 		proceed();
 
@@ -563,6 +693,9 @@ public:
 		}
 	}
 
+	/**
+	 * Write an unsigned integer value.
+	 */
 	void writeUInt(uint64_t num) {
 		proceed();
 
@@ -583,16 +716,25 @@ public:
 		}
 	}
 
+	/**
+	 * Write a nil value.
+	 */
 	void writeNil() {
 		proceed();
 		w_.writeU8(0xc0);
 	}
 
+	/**
+	 * Write a bool value.
+	 */
 	void writeBool(bool b) {
 		proceed();
 		w_.writeU8(b ? 0xc3 : 0xc2);
 	}
 
+	/**
+	 * Write a 32-bit floating point value.
+	 */
 	void writeFloat32(float f) {
 		proceed();
 		static_assert(sizeof(float) == sizeof(uint32_t));
@@ -601,6 +743,9 @@ public:
 		w_.writeU32(num);
 	}
 
+	/**
+	 * Write a 64-bit floating point value.
+	 */
 	void writeFloat64(double d) {
 		proceed();
 		static_assert(sizeof(double) == sizeof(uint64_t));
@@ -609,6 +754,10 @@ public:
 		w_.writeU64(num);
 	}
 
+	/**
+	 * Write a string value.
+	 * The string must be smaller than 2^31-1 bytes long.
+	 */
 	void writeString(std::string_view sv) {
 		proceed();
 		size_t length = sv.size();
@@ -630,6 +779,10 @@ public:
 		w_.writeBlob((const void *)sv.data(), length);
 	}
 
+	/**
+	 * Write a byte string value.
+	 * The byte string must be smaller than 2^31-1 bytes long.
+	 */
 	void writeBinary(std::span<unsigned char> bv) {
 		proceed();
 		size_t length = bv.size();
@@ -649,8 +802,19 @@ public:
 		w_.writeBlob(bv.data(), length);
 	}
 
+	/**
+	 * Write an array value.
+	 * Will clear the ArrayBuilder.
+	 * The ArrayBuilder can be re-used to create another array value.
+	 */
 	void writeArray(ArrayBuilder &ab);
 
+	/**
+	 * Begin writing an array value.
+	 * Returns a sub-serializer which array values must be written to.
+	 * Exactly 'n' values must be written to the sub-serializer,
+	 * and then 'endArray' must be called.
+	 */
 	Serializer beginArray(size_t n) {
 		proceed();
 		nesting_ = true;
@@ -659,6 +823,11 @@ public:
 		return Serializer(w_.os_);
 	}
 
+	/**
+	 * Complete writing an array that was started by 'beginArray'.
+	 * The same amount of values must have been written to the serializer
+	 * as were passed to the 'beginArray' method.
+	 */
 	void endArray(Serializer &sub) {
 		if (sub.written() != nestingLength_) {
 			throw SerializeError("beginArray/endArray length mismatch");
@@ -667,8 +836,19 @@ public:
 		nesting_ = false;
 	}
 
+	/**
+	 * Write a map value.
+	 * Will clear the MapBuilder.
+	 * The MapBuilder can be re-used to create another array value.
+	 */
 	void writeMap(MapBuilder &mb);
 
+	/**
+	 * Begin writing a map value.
+	 * Returns a sub-serializer which map key/value pairs must be written to.
+	 * Exactly 'n' keys and 'n' values must be written to the sub-serializer,
+	 * and then 'endMap' must be called.
+	 */
 	Serializer beginMap(size_t n) {
 		proceed();
 		nesting_ = true;
@@ -677,6 +857,11 @@ public:
 		return Serializer(w_.os_);
 	}
 
+	/**
+	 * Complete writing a mwp that was started by 'beginMap'.
+	 * The same amount of keys and values must have been written to the serializer
+	 * as were passed to the 'beginMap' method.
+	 */
 	void endMap(Serializer &sub) {
 		if (sub.written() != nestingLength_) {
 			throw SerializeError("beginMap/endMap length mismatch");
@@ -685,6 +870,9 @@ public:
 		nesting_ = false;
 	}
 
+	/**
+	 * Write an extension.
+	 */
 	void writeExtension(int64_t type, const std::span<unsigned char> ext) {
 		// Incrementing written_ will happen in writeInt()
 		if (nesting_) {
@@ -719,6 +907,9 @@ public:
 		w_.writeBlob(ext.data(), length);
 	}
 
+	/**
+	 * Get the number of values written to the serializer so far.
+	 */
 	size_t written() { return written_; }
 
 protected:
@@ -764,10 +955,18 @@ protected:
 	size_t nestingLength_ = 0;
 };
 
+/**
+ * A specialized serializer for array values,
+ * which writes its values to an internal buffer.
+ */
 class ArrayBuilder: public Serializer {
 public:
 	ArrayBuilder(): Serializer(ss_) {}
 
+	/**
+	 * Get the underlying buffer.
+	 * This moves the buffer out of the underlying string stream.
+	 */
 	std::string consume() {
 		std::string s = std::move(ss_).str();
 		ss_ = {};
@@ -775,6 +974,12 @@ public:
 		return s;
 	}
 
+	/**
+	 * Set the underlying buffer.
+	 * Allows re-using a buffer between array/map builders.
+	 * The buffer will be cleared (i.e size() set to 0),
+	 * but the capacity will be kept.
+	 */
 	void setBuffer(std::string &&str) {
 		str.clear();
 		ss_.str(std::move(str));
@@ -784,10 +989,19 @@ private:
 	std::stringstream ss_;
 };
 
+
+/**
+ * A specialized serializer for map keys and values,
+ * which writes its keys and values to an internal buffer.
+ */
 class MapBuilder: public Serializer {
 public:
 	MapBuilder(): Serializer(ss_) {}
 
+	/**
+	 * Get the underlying buffer.
+	 * This moves the buffer out of the underlying string stream.
+	 */
 	std::string consume() {
 		std::string s = std::move(ss_).str();
 		ss_ = {};
@@ -795,6 +1009,12 @@ public:
 		return s;
 	}
 
+	/**
+	 * Set the underlying buffer.
+	 * Allows re-using a buffer between array/map builders.
+	 * The buffer will be cleared (i.e size() set to 0),
+	 * but the capacity will be kept.
+	 */
 	void setBuffer(std::string &&str) {
 		str.clear();
 		ss_.str(std::move(str));
