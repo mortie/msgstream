@@ -33,3 +33,26 @@ the example programs:
   Parse a JSON file and output MessagePack
 
 [msgstream.h](msgstream.h) contains documentation comments.
+
+## Tests
+
+Run tests with: `make check`. This depends on git.
+This will download 
+[kawanet's msgpack-test-suite](https://github.com/kawanet/msgpack-test-suite/),
+a large list of msgpack strings and their associated expected values.
+
+All tests pass.
+
+## Fuzzing
+
+Install [AFLplusplus](https://aflplus.plus/)
+(`sudo apt install afl++` on Ubuntu),
+then run `make fuzz` to start fuzzing.
+
+By default, 20 fuzzer processes will start.
+You can change this in the [fuzz.sh](./fuzz.sh) script.
+
+The fuzz tester tests the `msgpack-to-json` program.
+The goal is to make sure that no input causes crashes;
+invalid input should cause exceptions to be thrown
+in a controled manner.
