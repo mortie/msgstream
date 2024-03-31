@@ -1,12 +1,13 @@
 #include <iostream>
 #include <span>
 #include <sstream>
-#include <stdexcept>
+#include <exception>
 #include <string>
 #include <string_view>
 #include <vector>
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 
 namespace MsgStream {
 
@@ -250,7 +251,7 @@ public:
 		proceed();
 
 		uint8_t ch = r_.nextU8();
-		if (ch >= 0x00 && ch <= 0x7f) {
+		if (ch <= 0x7fu) {
 			return ch;
 		} else if (ch == 0xcc) {
 			return r_.nextU8();
