@@ -627,26 +627,26 @@ protected:
 
 class ArrayParser: public Parser {
 public:
+	ArrayParser(std::istream &is, size_t limit): Parser(is, limit) {}
+
 	/**
 	 * Get the number of values left to read from the array.
 	 * Before any values have been read, this will be
 	 * equal to the total number of values in the array.
 	 */
 	size_t arraySize() { return limit_; }
-
-	ArrayParser(std::istream &is, size_t limit): Parser(is, limit) {}
 };
 
 class MapParser: public Parser {
 public:
+	MapParser(std::istream &is, size_t limit): Parser(is, limit * 2) {}
+
 	/**
 	 * Get the number of key-value pairs left to read from the map.
 	 * Before any key-value pairs have been read, this will be
 	 * equal to the total number of key-value pairs in the map.
 	 */
 	size_t mapSize() { return limit_ / 2; }
-
-	MapParser(std::istream &is, size_t limit): Parser(is, limit * 2) {}
 };
 
 inline ArrayParser Parser::nextArray() {
@@ -1053,6 +1053,13 @@ public:
 		ss_.str(std::move(str));
 	}
 
+	/**
+	 * Clear the internal buffer.
+	 */
+	void clear() {
+		setBuffer(consume());
+	}
+
 private:
 	std::stringstream ss_;
 };
@@ -1088,11 +1095,19 @@ public:
 		ss_.str(std::move(str));
 	}
 
+	/**
+	 * Clear the internal buffer.
+	 */
+	void clear() {
+		setBuffer(consume());
+	}
+
 private:
 	std::stringstream ss_;
 };
 
 inline void Serializer::writeArray(ArrayBuilder &ab) {
+	proceed();
 	writeArrayHeader(ab.written());
 	std::string s = ab.consume();
 	w_.writeBlob(s.data(), s.size());
@@ -1104,6 +1119,7 @@ inline void Serializer::writeMap(MapBuilder &mb) {
 		throw SerializeError("Odd number of values in map");
 	}
 
+	proceed();
 	writeMapHeader(mb.written() / 2);
 	std::string s = mb.consume();
 	w_.writeBlob(s.data(), s.size());
