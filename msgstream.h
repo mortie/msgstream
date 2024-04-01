@@ -647,6 +647,19 @@ public:
 	 * equal to the total number of key-value pairs in the map.
 	 */
 	size_t mapSize() { return limit_ / 2; }
+
+	/**
+	 * Get the next key of the map.
+	 * Returns false if there are no more values in the map.
+	 */
+	bool nextKey(std::string &key) {
+		if (!hasNext()) {
+			return false;
+		}
+
+		nextString(key);
+		return true;
+	}
 };
 
 inline ArrayParser Parser::nextArray() {
