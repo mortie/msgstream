@@ -1,3 +1,6 @@
+#ifndef LIBMSGSTREAM_HEADER
+#define LIBMSGSTREAM_HEADER
+
 #include <iostream>
 #include <span>
 #include <sstream>
@@ -1108,3 +1111,5 @@ inline void Serializer::writeMap(MapBuilder &mb) {
 }
 
 }
+
+#endif // LIBMSGSTREAM_HEADER
