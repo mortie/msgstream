@@ -299,7 +299,6 @@ public:
 	 * This will cause the value to wrap around.
 	 */
 	int64_t nextInt() {
-		proceed();
 		return (int64_t)nextUInt();
 	}
 
